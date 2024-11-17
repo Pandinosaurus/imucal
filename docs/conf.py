@@ -12,17 +12,19 @@
 #
 import os
 import re
+import sys
 from datetime import datetime
 from importlib import import_module
-from inspect import getsourcelines, getsourcefile
+from inspect import getsourcefile, getsourcelines
 from pathlib import Path
 from shutil import copy
-
-import sys
 
 import toml
 
 sys.path.insert(0, os.path.abspath(".."))
+
+import contextlib
+from typing import Optional
 
 import imucal
 
@@ -39,7 +41,7 @@ info = toml.load("../pyproject.toml")["tool"]["poetry"]
 project = info["name"]
 author = ", ".join(info["authors"])
 release = info["version"]
-copyright = "2018 - {}, MaD-Lab FAU, Digital Health - Gait Analytics Group".format(datetime.now().year)
+copyright = f"2018 - {datetime.now().year}, MaD-Lab FAU, Digital Health - Gait Analytics Group"
 
 # -- General configuration ---------------------------------------------------
 
@@ -115,12 +117,13 @@ html_static_path = ["_static"]
 # intersphinx configuration
 intersphinx_module_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "scipy": ("https://docs.scipy.org/doc/scipy-1.8.0/html-scipyorg/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
     "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
 }
 
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/{.major}".format(sys.version_info), None),
+    "python": (f"https://docs.python.org/{sys.version_info.major}", None),
     **intersphinx_module_mapping,
 }
 
@@ -128,7 +131,7 @@ intersphinx_mapping = {
 sphinx_gallery_conf = {
     "examples_dirs": ["../examples"],
     "gallery_dirs": ["./auto_examples"],
-    "reference_url": {"imucal": None, **{k: v[0] for k, v in intersphinx_module_mapping.items()}},
+    "reference_url": {"imucal": None},
     "backreferences_dir": "modules/generated/backreferences",
     "doc_module": ("imucal",),
     "filename_pattern": re.escape(os.sep),
@@ -148,7 +151,7 @@ def get_nested_attr(obj, attr):
         return get_nested_attr(new_obj, attrs[1])
 
 
-def linkcode_resolve(domain, info):
+def linkcode_resolve(domain, info) -> Optional[str]:
     if domain != "py":
         return None
     if not info["module"]:
@@ -157,25 +160,25 @@ def linkcode_resolve(domain, info):
     obj = get_nested_attr(module, info["fullname"])
     code_line = None
     filename = ""
-    try:
+    with contextlib.suppress(Exception):
         filename = str(Path(getsourcefile(obj)).relative_to(Path(getsourcefile(imucal)).parent.parent))
-    except:
-        pass
-    try:
+
+    with contextlib.suppress(Exception):
         code_line = getsourcelines(obj)[-1]
-    except:
-        pass
+
     if filename:
         if code_line:
-            return "{}/tree/master/{}#L{}".format(URL, filename, code_line)
-        return "{}/tree/master/{}".format(URL, filename)
+            return f"{URL}/tree/master/{filename}#L{code_line}"
+        return f"{URL}/tree/master/{filename}"
+    return None
 
 
-def skip_properties(app, what, name, obj, skip, options):
+def skip_properties(app, what, name, obj, skip, options) -> Optional[bool]:
     """This removes all properties from the documentation as they are expected to be documented in the docstring."""
     if isinstance(obj, property):
         return True
+    return None
 
 
-def setup(app):
+def setup(app) -> None:
     app.connect("autodoc-skip-member", skip_properties)

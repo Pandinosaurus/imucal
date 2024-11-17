@@ -1,15 +1,25 @@
 """Calculate a Ferraris calibration from sensor data."""
-from typing import Optional, TypeVar, Type, NamedTuple, Iterable, Tuple
+
+from collections.abc import Iterable
+from typing import ClassVar, NamedTuple, Optional, TypeVar
 
 import numpy as np
 import pandas as pd
 from numpy.linalg import inv
-from typing_extensions import ClassVar
 
 from imucal.calibration_info import CalibrationInfo
 from imucal.ferraris_calibration_info import FerrarisCalibrationInfo, TurntableCalibrationInfo
 
 T = TypeVar("T", bound="FerrarisCalibration")
+
+
+def _convert_data_from_section_list_to_df(data: pd.DataFrame, section_list: pd.DataFrame) -> pd.DataFrame:
+    out = {}
+
+    for label, row in section_list.iterrows():
+        out[label] = data.iloc[row.start : row.end]
+
+    return pd.concat(out)
 
 
 class FerrarisSignalRegions(NamedTuple):
@@ -35,7 +45,7 @@ class FerrarisSignalRegions(NamedTuple):
     gyr_y_rot: np.ndarray
     gyr_z_rot: np.ndarray
 
-    def validate(self):
+    def validate(self) -> None:
         """Validate that all fields are populated with numpy arrays."""
         for k in self._fields:
             if not isinstance(getattr(self, k), np.ndarray) or len(getattr(self, k)) == 0:
@@ -109,12 +119,16 @@ class FerrarisCalibration:
     Examples
     --------
     >>> from imucal import FerrarisCalibration, ferraris_regions_from_interactive_plot
-    >>> sampling_rate = 100 #Hz
-    >>> data = ... # my data as 6 col pandas dataframe
+    >>> sampling_rate = 100  # Hz
+    >>> data = ...  # my data as 6 col pandas dataframe
     >>> # This will open an interactive plot, where you can select the start and the stop sample of each region
-    >>> section_data, section_list = ferraris_regions_from_interactive_plot(data, sampling_rate=sampling_rate)
-    >>> section_list.to_csv('./calibration_sections.csv')  # Store the annotated section list as reference for the
-    ...                                                    # future
+    >>> section_data, section_list = ferraris_regions_from_interactive_plot(
+    ...     data, sampling_rate=sampling_rate
+    ... )
+    >>> section_list.to_csv(
+    ...     "./calibration_sections.csv"
+    ... )  # Store the annotated section list as reference for the
+    ... # future
     >>> cal = FerrarisCalibration()  # Create new calibration object
     >>> calibration_info = cal.compute(  # Calculate the actual matrizes.
     ...     section_data,
@@ -138,12 +152,12 @@ class FerrarisCalibration:
 
     grav: float
     expected_angle: float
-    calibration_info_class: Type[FerrarisCalibrationInfo]
+    calibration_info_class: type[FerrarisCalibrationInfo]
 
     OUT_ACC_UNIT: ClassVar[str] = "m/s^2"
     OUT_GYR_UNIT: ClassVar[str] = "deg/s"
 
-    FERRARIS_SECTIONS: ClassVar[Tuple[str, ...]] = (
+    FERRARIS_SECTIONS: ClassVar[tuple[str, ...]] = (
         "x_p",
         "x_a",
         "y_p",
@@ -159,8 +173,8 @@ class FerrarisCalibration:
         self,
         grav: float = 9.81,
         expected_angle: float = -360,
-        calibration_info_class: Type[FerrarisCalibrationInfo] = FerrarisCalibrationInfo,
-    ):
+        calibration_info_class: type[FerrarisCalibrationInfo] = FerrarisCalibrationInfo,
+    ) -> None:
         self.grav = grav
         self.expected_angle = expected_angle
         self.calibration_info_class = calibration_info_class
@@ -193,14 +207,14 @@ class FerrarisCalibration:
 
         # Calculate means from all static phases and stack them into 3x3 matrices
         # Note: Each measurement should be a column
-        U_a_p = np.vstack(  # noqa: invalid-name
+        U_a_p = np.vstack(  # noqa: N806
             (
                 np.mean(signal_regions.acc_x_p, axis=0),
                 np.mean(signal_regions.acc_y_p, axis=0),
                 np.mean(signal_regions.acc_z_p, axis=0),
             )
         ).T
-        U_a_n = np.vstack(  # noqa: invalid-name
+        U_a_n = np.vstack(  # noqa: N806
             (
                 np.mean(signal_regions.acc_x_a, axis=0),
                 np.mean(signal_regions.acc_y_a, axis=0),
@@ -209,11 +223,11 @@ class FerrarisCalibration:
         ).T
 
         # Eq. 19
-        U_a_s = U_a_p + U_a_n  # noqa: invalid_name
+        U_a_s = U_a_p + U_a_n  # noqa: N806
 
         # Bias Matrix
         # Eq. 20
-        B_a = U_a_s / 2  # noqa: invalid_name
+        B_a = U_a_s / 2  # noqa: N806
 
         # Bias Vector
         b_a = np.diag(B_a)
@@ -222,18 +236,18 @@ class FerrarisCalibration:
         # Compute Scaling and Rotation
         # No need for bias correction, since it cancels out!
         # Eq. 21
-        U_a_d = U_a_p - U_a_n  # noqa: invalid_name
+        U_a_d = U_a_p - U_a_n  # noqa: N806
 
         # Calculate Scaling matrix
         # Eq. 23
         k_a_sq = 1 / (4 * self.grav**2) * np.diag(U_a_d @ U_a_d.T)
-        K_a = np.diag(np.sqrt(k_a_sq))  # noqa: invalid_name
-        cal_mat.K_a = K_a  # noqa: invalid_name
+        K_a = np.diag(np.sqrt(k_a_sq))  # noqa: N806
+        cal_mat.K_a = K_a
 
         # Calculate Rotation matrix
         # Eq. 22
-        R_a = inv(K_a) @ U_a_d / (2 * self.grav)  # noqa: invalid_name
-        cal_mat.R_a = R_a  # noqa: invalid_name
+        R_a = inv(K_a) @ U_a_d / (2 * self.grav)  # noqa: N806
+        cal_mat.R_a = R_a
 
         ###############################################################################################################
         # Calculate Gyroscope Matrix
@@ -261,14 +275,14 @@ class FerrarisCalibration:
         # Acceleration sensitivity
 
         # Note: Each measurement should be a column
-        U_g_p = np.vstack(  # noqa: invalid_name
+        U_g_p = np.vstack(  # noqa: N806
             (
                 np.mean(signal_regions.gyr_x_p, axis=0),
                 np.mean(signal_regions.gyr_y_p, axis=0),
                 np.mean(signal_regions.gyr_z_p, axis=0),
             )
         ).T
-        U_g_a = np.vstack(  # noqa: invalid_name
+        U_g_a = np.vstack(  # noqa: N806
             (
                 np.mean(signal_regions.gyr_x_a, axis=0),
                 np.mean(signal_regions.gyr_y_a, axis=0),
@@ -277,8 +291,8 @@ class FerrarisCalibration:
         ).T
 
         # Eq. 9
-        K_ga = (U_g_p - U_g_a) / (2 * self.grav)  # noqa: invalid_name
-        cal_mat.K_ga = K_ga  # noqa: invalid_name
+        K_ga = (U_g_p - U_g_a) / (2 * self.grav)  # noqa: N806
+        cal_mat.K_ga = K_ga
 
         # Gyroscope Scaling and Rotation
 
@@ -292,7 +306,7 @@ class FerrarisCalibration:
 
         # Integrate gyro readings
         # Eg. 13/14
-        W_s = np.zeros((3, 3))  # noqa: invalid_name
+        W_s = np.zeros((3, 3))  # noqa: N806
         W_s[:, 0] = np.sum(gyr_x_rot_cor, axis=0) / sampling_rate_hz
         W_s[:, 1] = np.sum(gyr_y_rot_cor, axis=0) / sampling_rate_hz
         W_s[:, 2] = np.sum(gyr_z_rot_cor, axis=0) / sampling_rate_hz
@@ -303,11 +317,11 @@ class FerrarisCalibration:
 
         # Eq. 12
         k_g_sq = np.diag(multiplied @ multiplied.T)
-        K_g = np.diag(np.sqrt(k_g_sq))  # noqa: invalid_name
-        cal_mat.K_g = K_g  # noqa: invalid_name
+        K_g = np.diag(np.sqrt(k_g_sq))  # noqa: N806
+        cal_mat.K_g = K_g
 
-        R_g = inv(K_g) @ multiplied  # noqa: invalid_name
-        cal_mat.R_g = R_g  # noqa: invalid_name
+        R_g = inv(K_g) @ multiplied  # noqa: N806
+        cal_mat.R_g = R_g
 
         return cal_mat
 
@@ -332,8 +346,8 @@ class TurntableCalibration(FerrarisCalibration):
         self,
         grav: float = 9.81,
         expected_angle: float = -720,
-        calibration_info_class: Type[TurntableCalibrationInfo] = TurntableCalibrationInfo,
-    ):
+        calibration_info_class: type[TurntableCalibrationInfo] = TurntableCalibrationInfo,
+    ) -> None:
         super().__init__(grav=grav, expected_angle=expected_angle, calibration_info_class=calibration_info_class)
 
 
@@ -350,8 +364,8 @@ def ferraris_regions_from_df(
     Examples
     --------
     >>> import pandas as pd
-    >>> sampling_rate = 100 #Hz
-    >>> df = ... # A valid DataFrame with all sections in the index
+    >>> sampling_rate = 100  # Hz
+    >>> df = ...  # A valid DataFrame with all sections in the index
     >>> print(df)
             acc_x acc_y   acc_z  gyr_x  gyr_y  gyr_z
     part
@@ -387,8 +401,8 @@ def ferraris_regions_from_df(
     """
     acc_df = df[list(acc_cols)]
     gyro_df = df[list(gyr_cols)]
-    acc_dict = acc_df.groupby(level=0).apply(lambda x: x.values).to_dict()
-    gyro_dict = gyro_df.groupby(level=0).apply(lambda x: x.values).to_dict()
+    acc_dict = acc_df.groupby(level=0).apply(lambda x: x.to_numpy()).to_dict()
+    gyro_dict = gyro_df.groupby(level=0).apply(lambda x: x.to_numpy()).to_dict()
     acc_dict = {"acc_" + k: v for k, v in acc_dict.items()}
     gyro_dict = {"gyr_" + k: v for k, v in gyro_dict.items()}
 
@@ -430,9 +444,9 @@ def ferraris_regions_from_section_list(
     --------
     >>> import pandas as pd
     >>> # Load a valid section list from disk. Note the `index_col=0` to preserve correct format!
-    >>> section_list = pd.read_csv('./calibration_sections.csv', index_col=0)
-    >>> sampling_rate = 100 #Hz
-    >>> df = ... # my data as 6 col pandas dataframe
+    >>> section_list = pd.read_csv("./calibration_sections.csv", index_col=0)
+    >>> sampling_rate = 100  # Hz
+    >>> df = ...  # my data as 6 col pandas dataframe
     >>> regions = ferraris_regions_from_section_list(df)
     >>> regions
     FerrarisSignalRegions(x_a=array([...]), ..., z_rot=array([...]))
@@ -443,8 +457,6 @@ def ferraris_regions_from_section_list(
     ferraris_regions_from_df
 
     """
-    from imucal.calibration_gui import _convert_data_from_section_list_to_df  # noqa: import-outside-toplevel
-
     df = _convert_data_from_section_list_to_df(data, section_list)
     return ferraris_regions_from_df(df, acc_cols=acc_cols, gyr_cols=gyr_cols)
 
@@ -454,7 +466,8 @@ def ferraris_regions_from_interactive_plot(
     acc_cols: Iterable[str] = ("acc_x", "acc_y", "acc_z"),
     gyr_cols: Iterable[str] = ("gyr_x", "gyr_y", "gyr_z"),
     title: Optional[str] = None,
-) -> Tuple[FerrarisSignalRegions, pd.DataFrame]:
+    figsize=(20, 10),
+) -> tuple[FerrarisSignalRegions, pd.DataFrame]:
     """Create a Calibration object by selecting the individual signal sections manually in an interactive GUI.
 
     This will open a Tkinter Window that allows you to label the start and the end all required sections for a
@@ -463,11 +476,15 @@ def ferraris_regions_from_interactive_plot(
 
     Examples
     --------
-    >>> sampling_rate = 100 #Hz
-    >>> data = ... # my data as 6 col pandas dataframe
+    >>> sampling_rate = 100  # Hz
+    >>> data = ...  # my data as 6 col pandas dataframe
     >>> # This will open an interactive plot, where you can select the start and the stop sample of each region
-    >>> regions, section_list = ferraris_regions_from_interactive_plot(data, sampling_rate=sampling_rate)
-    >>> section_list.to_csv('./calibration_sections.csv')  # This is optional, but recommended
+    >>> regions, section_list = ferraris_regions_from_interactive_plot(
+    ...     data, sampling_rate=sampling_rate
+    ... )
+    >>> section_list.to_csv(
+    ...     "./calibration_sections.csv"
+    ... )  # This is optional, but recommended
     >>> regions
     FerrarisSignalRegions(x_a=array([...]), ..., z_rot=array([...]))
 
@@ -481,6 +498,9 @@ def ferraris_regions_from_interactive_plot(
         The name of the 3 acceleration columns in order x,y,z.
     title :
         Optional title of the plot window
+    figsize :
+        The initial size of the plot window.
+        If you can not see the toolbar at the bottom, it might help to reduce the figure size.
 
     Returns
     -------
@@ -499,14 +519,16 @@ def ferraris_regions_from_interactive_plot(
     acc = data[list(acc_cols)].to_numpy()
     gyr = data[list(gyr_cols)].to_numpy()
 
-    section_list = _find_ferraris_regions_interactive(acc, gyr, title=title)
+    section_list = _find_ferraris_regions_interactive(acc, gyr, title=title, figsize=figsize)
     return (
         ferraris_regions_from_section_list(data, section_list, gyr_cols=gyr_cols, acc_cols=acc_cols),
         section_list,
     )
 
 
-def _find_ferraris_regions_interactive(acc: np.ndarray, gyro: np.ndarray, title: Optional[str] = None):
+def _find_ferraris_regions_interactive(
+    acc: np.ndarray, gyro: np.ndarray, title: Optional[str] = None, figsize=(20, 10)
+):
     """Prepare the calibration data for the later calculation of calibration matrices.
 
     Parameters
@@ -518,10 +540,11 @@ def _find_ferraris_regions_interactive(acc: np.ndarray, gyro: np.ndarray, title:
     title :
         Optional title for the Calibration GUI
 
-    """
-    from imucal.calibration_gui import CalibrationGui  # noqa: import-outside-toplevel
 
-    plot = CalibrationGui(acc, gyro, FerrarisCalibration.FERRARIS_SECTIONS, title=title)
+    """
+    from imucal.calibration_gui import CalibrationGui
+
+    plot = CalibrationGui(acc, gyro, FerrarisCalibration.FERRARIS_SECTIONS, title=title, initial_figsize=figsize)
 
     section_list = plot.section_list
 

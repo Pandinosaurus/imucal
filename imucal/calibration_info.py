@@ -1,8 +1,10 @@
 """Base Class for all CalibrationInfo objects."""
+
 import json
-from dataclasses import dataclass, fields, asdict
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Tuple, Union, TypeVar, ClassVar, Optional, Type, Iterable
+from typing import ClassVar, Optional, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -29,19 +31,19 @@ class CalibrationInfo:
 
     """
 
-    CAL_FORMAT_VERSION: ClassVar[Version] = _CAL_FORMAT_VERSION  # noqa: invalid-name
-    CAL_TYPE: ClassVar[str] = None  # noqa: invalid-name
+    CAL_FORMAT_VERSION: ClassVar[Version] = _CAL_FORMAT_VERSION
+    CAL_TYPE: ClassVar[str] = None
     acc_unit: Optional[str] = None
     gyr_unit: Optional[str] = None
     from_acc_unit: Optional[str] = None
     from_gyr_unit: Optional[str] = None
     comment: Optional[str] = None
 
-    _cal_paras: ClassVar[Tuple[str, ...]]
+    _cal_paras: ClassVar[tuple[str, ...]]
 
     def calibrate(
         self, acc: np.ndarray, gyr: np.ndarray, acc_unit: Optional[str], gyr_unit: Optional[str]
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Abstract method to perform a calibration on both acc and gyro.
 
         This absolutely needs to implement by any daughter class.
@@ -108,21 +110,21 @@ class CalibrationInfo:
 
         return cal_df
 
-    def _validate_units(self, other_acc, other_gyr):
+    def _validate_units(self, other_acc, other_gyr) -> None:
         check_pairs = {"acc": (other_acc, self.from_acc_unit), "gyr": (other_gyr, self.from_gyr_unit)}
         for name, (other, this) in check_pairs.items():
             if other != this:
                 if this is None:
                     raise ValueError(
                         "This calibration does not provide any information about the expected input "
-                        "units for {0}. "
-                        "Set `{0}_unit` explicitly to `None` to ignore this error. "
+                        f"units for {name}. "
+                        f"Set `{name}_unit` explicitly to `None` to ignore this error. "
                         "However, we recommend to recreate your calibration with proper information "
-                        "about the input unit.".format(name)
+                        "about the input unit."
                     )
                 raise ValueError(
-                    "The provided {} data has a unit of {}. "
-                    "However, the calibration is created to calibrate data with a unit of {}.".format(name, other, this)
+                    f"The provided {name} data has a unit of {other}. "
+                    f"However, the calibration is created to calibrate data with a unit of {this}."
                 )
 
     def __eq__(self, other):
@@ -132,7 +134,7 @@ class CalibrationInfo:
         """
         # Check type:
         if not isinstance(other, self.__class__):
-            raise ValueError("Comparison is only defined between two {} object!".format(self.__class__.__name__))
+            raise TypeError(f"Comparison is only defined between two {self.__class__.__name__} object!")
 
         # Test keys equal:
         if fields(self) != fields(other):
@@ -146,10 +148,7 @@ class CalibrationInfo:
         for f in fields(self):
             a1 = getattr(self, f.name)
             a2 = getattr(other, f.name)
-            if isinstance(a1, np.ndarray):
-                equal = np.array_equal(a1, a2)
-            else:
-                equal = a1 == a2
+            equal = np.array_equal(a1, a2) if isinstance(a1, np.ndarray) else a1 == a2
             if not equal:
                 return False
         return True
@@ -175,16 +174,16 @@ class CalibrationInfo:
     @classmethod
     def find_subclass_from_cal_type(cls, cal_type):
         """Get a SensorCalibration subclass that handles the specified calibration type."""
-        if cls.CAL_TYPE == cal_type:
+        if cal_type == cls.CAL_TYPE:
             return cls
         try:
-            out_cls = next(x for x in cls._get_subclasses() if x.CAL_TYPE == cal_type)
+            out_cls = next(x for x in cls._get_subclasses() if cal_type == x.CAL_TYPE)
         except StopIteration as e:
             raise ValueError(
-                "No suitable calibration info class could be found for caltype `{}`. "
-                "The following classes were checked: {}. "
+                f"No suitable calibration info class could be found for caltype `{cal_type}`. "
+                f"The following classes were checked: {(cls.__name__, *(x.__name__ for x in cls._get_subclasses()))}. "
                 "If your CalibrationInfo class is missing, make sure it is imported before loading a "
-                "file.".format(cal_type, (cls.__name__, *(x.__name__ for x in cls._get_subclasses())))
+                "file."
             ) from e
         return out_cls
 
@@ -194,7 +193,7 @@ class CalibrationInfo:
         return json.dumps(data_dict, indent=4, cls=NumpyEncoder)
 
     @classmethod
-    def from_json(cls: Type[CalInfo], json_str: str) -> CalInfo:
+    def from_json(cls: type[CalInfo], json_str: str) -> CalInfo:
         """Create a calibration object from a json string (created by `CalibrationInfo.to_json`).
 
         Parameters
@@ -224,10 +223,11 @@ class CalibrationInfo:
 
         """
         data_dict = self._to_list_dict()
-        return json.dump(data_dict, open(path, "w", encoding="utf8"), cls=NumpyEncoder, indent=4)
+        with Path(path).open("w", encoding="utf8") as f:
+            json.dump(data_dict, f, cls=NumpyEncoder, indent=4)
 
     @classmethod
-    def from_json_file(cls: Type[CalInfo], path: Union[str, Path]) -> CalInfo:
+    def from_json_file(cls: type[CalInfo], path: Union[str, Path]) -> CalInfo:
         """Create a calibration object from a valid json file (created by `CalibrationInfo.to_json_file`).
 
         Parameters
@@ -242,13 +242,13 @@ class CalibrationInfo:
             The exact child class is determined by the `cal_type` key in the json string.
 
         """
-        with open(path, "r", encoding="utf8") as f:
+        with Path(path).open(encoding="utf8") as f:
             raw_json = json.load(f)
         check_cal_format_version(raw_json.pop("_format_version", None), cls.CAL_FORMAT_VERSION)
         subclass = cls.find_subclass_from_cal_type(raw_json.pop("cal_type"))
         return subclass._from_list_dict(raw_json)
 
-    def to_hdf5(self, path: Union[str, Path]):
+    def to_hdf5(self, path: Union[str, Path]) -> None:
         """Save calibration matrices to hdf5 file format.
 
         Parameters
@@ -257,7 +257,7 @@ class CalibrationInfo:
             Path to the hdf5 file
 
         """
-        import h5py  # noqa: import-outside-toplevel
+        import h5py
 
         with h5py.File(path, "w") as hdf:
             for k, v in self._to_list_dict().items():
@@ -267,7 +267,7 @@ class CalibrationInfo:
                     hdf[k] = v
 
     @classmethod
-    def from_hdf5(cls: Type[CalInfo], path: Union[str, Path]):
+    def from_hdf5(cls: type[CalInfo], path: Union[str, Path]):
         """Read calibration data stored in hdf5 fileformat (created by `CalibrationInfo.save_to_hdf5`).
 
         Parameters
@@ -282,29 +282,37 @@ class CalibrationInfo:
             The exact child class is determined by the `cal_type` key in the json string.
 
         """
-        import h5py  # noqa: import-outside-toplevel
+        import h5py
 
         with h5py.File(path, "r") as hdf:
             format_version = hdf.get("_format_version")
             if format_version:
-                format_version = format_version[()]
+                format_version = format_version.asstr()[()]
             check_cal_format_version(format_version, cls.CAL_FORMAT_VERSION)
-            subcls = cls.find_subclass_from_cal_type(hdf["cal_type"][()])
-            data = {k.name: hdf.get(k.name)[()] for k in fields(subcls)}
-
+            subcls = cls.find_subclass_from_cal_type(hdf["cal_type"][()].decode("utf-8"))
+            data = {}
+            for k in fields(subcls):
+                dp = hdf.get(k.name)
+                if h5py.check_string_dtype(dp.dtype):
+                    # String data
+                    data[k.name] = dp.asstr()[()]
+                else:
+                    # No string data
+                    data[k.name] = dp[()]
         return subcls._from_list_dict(data)
 
 
 class NumpyEncoder(json.JSONEncoder):
     """Custom encoder for numpy array."""
 
-    def default(self, obj):  # noqa: arguments-differ
+    def default(self, obj):
+        """Allow encoding of numpy objects by converting them to lists."""
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
 
-def check_cal_format_version(version: Optional[Version] = None, current_version: Version = _CAL_FORMAT_VERSION):
+def check_cal_format_version(version: Optional[Version] = None, current_version: Version = _CAL_FORMAT_VERSION) -> None:
     """Check if a calibration can be loaded with the current loader."""
     # No version means, the old 1.0 format is used that does not provide a version string
     if not version:

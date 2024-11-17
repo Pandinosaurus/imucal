@@ -1,6 +1,7 @@
 """Wrapper object to hold calibration matrices for a Ferraris Calibration."""
+
 from dataclasses import dataclass
-from typing import Tuple, ClassVar, Optional
+from typing import ClassVar, Optional
 
 import numpy as np
 
@@ -30,23 +31,23 @@ class FerrarisCalibrationInfo(CalibrationInfo):
 
     """
 
-    CAL_TYPE: ClassVar[str] = "Ferraris"  # noqa: invalid-name
+    CAL_TYPE: ClassVar[str] = "Ferraris"
 
     acc_unit: str = "m/s^2"
     gyr_unit: str = "deg/s"
-    K_a: Optional[np.ndarray] = None  # noqa: invalid-name
-    R_a: Optional[np.ndarray] = None  # noqa: invalid-name
+    K_a: Optional[np.ndarray] = None
+    R_a: Optional[np.ndarray] = None
     b_a: Optional[np.ndarray] = None
-    K_g: Optional[np.ndarray] = None  # noqa: invalid-name
-    R_g: Optional[np.ndarray] = None  # noqa: invalid-name
-    K_ga: Optional[np.ndarray] = None  # noqa: invalid-name
+    K_g: Optional[np.ndarray] = None
+    R_g: Optional[np.ndarray] = None
+    K_ga: Optional[np.ndarray] = None
     b_g: Optional[np.ndarray] = None
 
-    _cal_paras: ClassVar[Tuple[str, ...]] = ("K_a", "R_a", "b_a", "K_g", "R_g", "K_ga", "b_g")
+    _cal_paras: ClassVar[tuple[str, ...]] = ("K_a", "R_a", "b_a", "K_g", "R_g", "K_ga", "b_g")
 
     def calibrate(
         self, acc: np.ndarray, gyr: np.ndarray, acc_unit: Optional[str], gyr_unit: Optional[str]
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Calibrate the accelerometer and the gyroscope.
 
         This corrects:
@@ -73,9 +74,7 @@ class FerrarisCalibrationInfo(CalibrationInfo):
         for v in self._cal_paras:
             if getattr(self, v, None) is None:
                 raise ValueError(
-                    "{} need to initialised before an acc calibration can be performed. {} is missing.".format(
-                        self._cal_paras, v
-                    )
+                    f"{self._cal_paras} need to initialised before an acc calibration can be performed. {v} is missing."
                 )
         self._validate_units(acc_unit, gyr_unit)
         acc_out = self._calibrate_acc(acc)
@@ -103,7 +102,7 @@ class FerrarisCalibrationInfo(CalibrationInfo):
         for v in paras:
             if getattr(self, v, None) is None:
                 raise ValueError(
-                    "{} need to initialised before an acc calibration can be performed. {} is missing".format(paras, v)
+                    f"{paras} need to initialised before an acc calibration can be performed. {v} is missing"
                 )
 
         # Combine Scaling and rotation matrix to one matrix
@@ -120,9 +119,7 @@ class FerrarisCalibrationInfo(CalibrationInfo):
         for v in required:
             if getattr(self, v, None) is None:
                 raise ValueError(
-                    "{} need to initialised before an gyro calibration can be performed. {} is missing".format(
-                        required, v
-                    )
+                    f"{required} need to initialised before an gyro calibration can be performed. {v} is missing"
                 )
         # Combine Scaling and rotation matrix to one matrix
         gyro_mat = np.matmul(np.linalg.inv(self.R_g), np.linalg.inv(self.K_g))
@@ -132,10 +129,7 @@ class FerrarisCalibrationInfo(CalibrationInfo):
         return gyro_out.T
 
     def _calibrate_gyr_offsets(self, gyr, calibrated_acc=None):
-        if calibrated_acc is None:
-            d_ga = np.array(0)
-        else:
-            d_ga = self.K_ga @ calibrated_acc.T
+        d_ga = np.array(0) if calibrated_acc is None else self.K_ga @ calibrated_acc.T
         offsets = d_ga.T + self.b_g
         return gyr - offsets
 
